@@ -29,11 +29,16 @@ public class RiskScoreAggregator {
                 if (result.isBlocking()) {
                     hasBlockingRule = true;
                 }
-                if (result.getReason() != null) {
+                if (result.getReason() != null && reasons.length() < 1000) {
                     if (!reasons.isEmpty()) {
                         reasons.append("; ");
                     }
-                    reasons.append(result.getRuleCode()).append(": ").append(result.getReason());
+                    String entry = result.getRuleCode() + ": " + result.getReason();
+                    if (reasons.length() + entry.length() > 1000) {
+                        reasons.append("[truncated]");
+                    } else {
+                        reasons.append(entry);
+                    }
                 }
             }
         }

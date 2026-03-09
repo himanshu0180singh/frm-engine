@@ -15,6 +15,6 @@ public interface RuleRepository extends JpaRepository<FrmRule, Long> {
 
     Optional<FrmRule> findByRuleCode(String ruleCode);
 
-    @Query("SELECT r FROM FrmRule r WHERE r.isActive = true AND r.appliesTo LIKE %:channel%")
+    @Query("SELECT r FROM FrmRule r WHERE r.isActive = true AND r.appliesTo LIKE CONCAT('%', :channel, '%') ORDER BY r.priority ASC")
     List<FrmRule> findActiveRulesByChannel(String channel);
 }
