@@ -1,0 +1,179 @@
+package com.company.frm.rules;
+
+import com.company.frm.drools.FraudEvaluationContext;
+import com.company.frm.dto.RuleResult;
+import java.util.List;
+
+/*
+ * FRM Engine — Fraud Detection Rules (Drools DRL)
+ * -----------------------------------------------
+ * Each rule evaluates a single FraudEvaluationContext fact that is inserted
+ * per transaction.  When a rule fires it appends a RuleResult to the
+ * "ruleResults" global list, which DroolsFraudEvaluator collects and passes
+ * on to RiskScoreAggregator.
+ *
+ * Rule codes, names, scores, and blocking flags match the seeds in
+ * V2__seed_initial_data.sql so that the audit log remains consistent.
+ *
+ * Thresholds mirror the rule-parameter seeds:
+ *   AMT_HIGH           THRESHOLD_AMOUNT   = 500 000 INR
+ *   AMT_DEVIATION      DEVIATION_MULTIPLIER = 5×  MIN_TXN_COUNT = 5
+ *   VEL_COUNT_1H       MAX_COUNT = 10     WINDOW_SECONDS = 3 600
+ *   VEL_COUNT_24H      MAX_COUNT = 50     WINDOW_SECONDS = 86 400
+ *   VEL_NIGHT          NIGHT_START_HOUR = 0  NIGHT_END_HOUR = 4
+ *   BHDOT_DORMANT      DORMANT_DAYS = 90
+ */
+
+global java.util.List ruleResults;
+
+// ══════════════════════════════════════════════════════════════════════════════
+// AMOUNT RULES
+// ══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * AMT_HIGH — Single transaction exceeds ₹5,00,000 (score: 300).
+ * Fires when amount > THRESHOLD_AMOUNT (default 500 000).
+ */
+rule "AMT_HIGH"
+    dialect "java"
+    when
+        ctx : FraudEvaluationContext(
+            amount != null,
+            amountAsDouble > 500000.0
+        )
+    then
+        ruleResults.add(RuleResult.builder()
+                .ruleCode("AMT_HIGH")
+                .ruleName("High Single Transaction Amount")
+                .fired(true)
+                .score(300)
+                .reason(String.format(
+                        "Amount %.2f exceeds high-amount threshold 500000.00",
+                        ctx.getAmountAsDouble()))
+                .blocking(false)
+                .build());
+end
+
+/**
+ * AMT_DEVIATION — Transaction amount is more than 5× the customer's average
+ * (score: 220).  Requires at least 5 prior transactions so that new customers
+ * are not flagged on their first large transaction.
+ */
+rule "AMT_DEVIATION"
+    dialect "java"
+    when
+        ctx : FraudEvaluationContext(
+            amount != null,
+            totalTxnCount >= 5,
+            avgAmountMultiplier > 5.0
+        )
+    then
+        ruleResults.add(RuleResult.builder()
+                .ruleCode("AMT_DEVIATION")
+                .ruleName("Amount Deviation from Avg")
+                .fired(true)
+                .score(220)
+                .reason(String.format(
+                        "Amount %.2f is %.1fx above customer average %.2f",
+                        ctx.getAmountAsDouble(),
+                        ctx.getAvgAmountMultiplier(),
+                        ctx.getAvgTxnAmount() != null ? ctx.getAvgTxnAmount().doubleValue() : 0.0))
+                .blocking(false)
+                .build());
+end
+
+// ══════════════════════════════════════════════════════════════════════════════
+// VELOCITY RULES
+// ══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * VEL_COUNT_1H — Customer made ≥10 transactions in the last hour (score: 200).
+ */
+rule "VEL_COUNT_1H"
+    dialect "java"
+    when
+        ctx : FraudEvaluationContext(txnCount1h >= 10)
+    then
+        ruleResults.add(RuleResult.builder()
+                .ruleCode("VEL_COUNT_1H")
+                .ruleName("High Transaction Count (1h)")
+                .fired(true)
+                .score(200)
+                .reason(String.format(
+                        "Transaction count %d reached limit 10 in 3600s window",
+                        ctx.getTxnCount1h()))
+                .blocking(false)
+                .build());
+end
+
+/**
+ * VEL_COUNT_24H — Customer made ≥50 transactions in the last 24 hours
+ * (score: 150).
+ */
+rule "VEL_COUNT_24H"
+    dialect "java"
+    when
+        ctx : FraudEvaluationContext(txnCount24h >= 50)
+    then
+        ruleResults.add(RuleResult.builder()
+                .ruleCode("VEL_COUNT_24H")
+                .ruleName("High Transaction Count (24h)")
+                .fired(true)
+                .score(150)
+                .reason(String.format(
+                        "Transaction count %d reached limit 50 in 86400s window",
+                        ctx.getTxnCount24h()))
+                .blocking(false)
+                .build());
+end
+
+/**
+ * VEL_NIGHT — Transaction occurs between 00:00 and 04:00 (score: 180).
+ * High-risk window: most legitimate customers are asleep.
+ */
+rule "VEL_NIGHT"
+    dialect "java"
+    when
+        ctx : FraudEvaluationContext(
+            transactionHour >= 0,
+            transactionHour < 4
+        )
+    then
+        ruleResults.add(RuleResult.builder()
+                .ruleCode("VEL_NIGHT")
+                .ruleName("Midnight Transaction Velocity")
+                .fired(true)
+                .score(180)
+                .reason(String.format(
+                        "Transaction at hour %02d falls in midnight high-risk window (00:00-04:00)",
+                        ctx.getTransactionHour()))
+                .blocking(false)
+                .build());
+end
+
+// ══════════════════════════════════════════════════════════════════════════════
+// BEHAVIORAL RULES
+// ══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * BHDOT_DORMANT — Account has been inactive for ≥90 days (score: 250).
+ * Sudden activity on a dormant account is a strong fraud signal.
+ * daysSinceLastTxn returns -1 when there is no transaction history, so
+ * this rule does not fire for brand-new customers.
+ */
+rule "BHDOT_DORMANT"
+    dialect "java"
+    when
+        ctx : FraudEvaluationContext(daysSinceLastTxn >= 90)
+    then
+        ruleResults.add(RuleResult.builder()
+                .ruleCode("BHDOT_DORMANT")
+                .ruleName("Dormant Account Activity")
+                .fired(true)
+                .score(250)
+                .reason(String.format(
+                        "Account dormant for %d days (threshold: 90 days)",
+                        ctx.getDaysSinceLastTxn()))
+                .blocking(false)
+                .build());
+end
