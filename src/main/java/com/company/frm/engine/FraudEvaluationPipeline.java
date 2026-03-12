@@ -3,19 +3,16 @@ package com.company.frm.engine;
 import com.company.frm.dto.FraudCheckResponse;
 import com.company.frm.dto.RuleResult;
 import com.company.frm.dto.TransactionRequest;
-import com.company.frm.engine.rules.FraudRule;
+import com.company.frm.drools.DroolsFraudEvaluator;
 import com.company.frm.engine.rules.RiskScoreAggregator;
 import com.company.frm.enums.Decision;
 import com.company.frm.event.FraudEventPublisher;
 import com.company.frm.service.AuditService;
-import com.company.frm.service.RuleConfigService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 import java.time.LocalDateTime;
-import java.util.ArrayList;
 import java.util.List;
 
 @Slf4j
@@ -25,13 +22,10 @@ public class FraudEvaluationPipeline {
 
     private final SanityChecker sanityChecker;
     private final WhitelistChecker whitelistChecker;
-    private final RuleConfigService ruleConfigService;
+    private final DroolsFraudEvaluator droolsFraudEvaluator;
     private final RiskScoreAggregator aggregator;
     private final AuditService auditService;
     private final FraudEventPublisher eventPublisher;
-
-    @Value("${frm.engine.allow-threshold:299}")
-    private int allowThreshold;
 
     public FraudCheckResponse evaluate(TransactionRequest request) {
         long startMs = System.currentTimeMillis();
@@ -67,24 +61,12 @@ public class FraudEvaluationPipeline {
             return allowedResponse;
         }
 
-        // Step 3: Rule evaluation
-        List<FraudRule> rules = ruleConfigService.getActiveRulesForChannel(
-                request.getChannel().name());
-        List<RuleResult> results = new ArrayList<>();
-
-        for (FraudRule rule : rules) {
-            try {
-                if (rule.isApplicable(request)) {
-                    RuleResult result = rule.evaluate(request);
-                    results.add(result);
-                    if (result.isFired()) {
-                        log.debug("Rule {} fired for txn={} score={}",
-                                result.getRuleCode(), request.getTransactionId(), result.getScore());
-                    }
-                }
-            } catch (Exception e) {
-                log.error("Error evaluating rule {} for txn={}: {}",
-                        rule.getRuleCode(), request.getTransactionId(), e.getMessage());
+        // Step 3: Drools rule evaluation
+        List<RuleResult> results = droolsFraudEvaluator.evaluate(request);
+        for (RuleResult result : results) {
+            if (result.isFired()) {
+                log.debug("Rule {} fired for txn={} score={}",
+                        result.getRuleCode(), request.getTransactionId(), result.getScore());
             }
         }
 
