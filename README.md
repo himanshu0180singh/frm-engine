@@ -22,6 +22,8 @@ It evaluates every inbound payment transaction in real-time using a configurable
 
 See [`docs/FRM_ENGINE_COMPLETE_DOCUMENTATION.md`](docs/FRM_ENGINE_COMPLETE_DOCUMENTATION.md) for the complete HLD, architecture diagrams, database schema, API spec, and rollout plan.
 
+> **"Why not just use Excel?"** — Great question. See [`docs/EXCEL_VS_FRM_ENGINE_COMPARISON.md`](docs/EXCEL_VS_FRM_ENGINE_COMPARISON.md) for a full 12-dimension comparison that explains exactly why a database-backed engine is the right choice for production payment fraud management.
+
 ---
 
 ## 🏗️ Tech Stack

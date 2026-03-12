@@ -21,6 +21,7 @@
 11. [Spring Boot Project Structure](#11-spring-boot-project-structure)
 12. [4-Phase Rollout Plan](#12-4-phase-rollout-plan)
 13. [Design Principles](#13-design-principles)
+14. [Why Not Excel?](#14-why-not-excel)
 
 ---
 
@@ -741,3 +742,26 @@ The FRM Engine is stateless at the application tier. All shared state (velocity 
 
 ### 13.8 Shadow Mode for Safe Rollout
 Every new rule or threshold change is tested in shadow mode before enforcement, eliminating the risk of a misconfigured rule causing incorrect blocks at scale.
+
+---
+
+## 14. Why Not Excel?
+
+A common early question is: *"Can we manage fraud rules in an Excel spreadsheet instead?"*
+
+The answer is **no** for any production payment system. Here is a concise summary; for the full analysis see [`EXCEL_VS_FRM_ENGINE_COMPARISON.md`](./EXCEL_VS_FRM_ENGINE_COMPARISON.md).
+
+| Requirement                          | Excel  | FRM Engine |
+|--------------------------------------|--------|------------|
+| Real-time enforcement (< 50ms)       | ❌     | ✅         |
+| 10,000+ transactions/second          | ❌     | ✅         |
+| Immutable audit trail (RBI compliant)| ❌     | ✅         |
+| Velocity tracking per customer       | ❌     | ✅         |
+| API integration with UPI/IMPS/NFS    | ❌     | ✅         |
+| Access control & data security       | ❌     | ✅         |
+| Automatic blacklist enforcement      | ❌     | ✅         |
+| Zero-downtime rule changes           | ❌     | ✅         |
+
+**Excel is useful as a prototyping or reporting aid. It must never be the enforcement layer for a production payment system.**
+
+See the full comparison document for detailed analysis, cost breakdown, and the migration path from Excel to the FRM Engine: [`docs/EXCEL_VS_FRM_ENGINE_COMPARISON.md`](./EXCEL_VS_FRM_ENGINE_COMPARISON.md)
